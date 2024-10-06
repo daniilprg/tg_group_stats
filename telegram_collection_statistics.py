@@ -20,12 +20,12 @@ import os
 # Consts
 DATA_FILENAME = f'data_{datetime.now().strftime(r'%d-%m-%Y')}.xlsx'
 FILE_EXISTS = True if os.path.exists(DATA_FILENAME) else False
-COLUMNS = ['ID ГРУППЫ', 'ССЫЛКА ГРУППЫ', 'ВСЕГО СООБЩЕНИЙ ЗА ЧАС', 'ВСЕГО ПОЛЬЗОВАТЕЛЕЙ ЗА ЧАС', 'ОТПРАВКА СООБЩЕНИЙ']
+COLUMNS = ['USERNAME ГРУППЫ', 'ВСЕГО СООБЩЕНИЙ ЗА ЧАС', 'ВСЕГО ПОЛЬЗОВАТЕЛЕЙ ЗА ЧАС', 'ОТПРАВКА СООБЩЕНИЙ']
 API_ID = 20419714
 API_HASH = "feee2b161028b2ce71cc92ede611e4ed"
 
 with open('groups.txt', 'r') as file:
-    LINES = list(map(int, file.read().split('\n')))
+    LINES = [line for line in file.read().split('\n') if line]
 
 class CollectionStats:
 
@@ -67,11 +67,6 @@ class CollectionStats:
             limit=2):
             if isinstance(message, Message):
                 return message
-    
-    def get_group_link(self, *, group) -> str:
-        if not self.client.get_entity(group).username is None:
-            return self.client.get_entity(group).username
-        return '-'
 
     def check_write_to_chat(self, *, group, message) -> bool:
         try:
@@ -85,6 +80,9 @@ class CollectionStats:
             logger.error(f'Сработал лимит отправки сообщений. Ожидаю {e.seconds} секунд')
             sleep(e.seconds + 1)
             self.check_write_to_chat(group=group, message=message)
+        except errors.RPCError as e:
+            logger.error('Нет прав на отправку сообщений')
+            return False
         except Exception as e:
             logger.error(f'Возникла непредвиденная ошибка: {e}')
             return False
@@ -119,16 +117,14 @@ class CollectionStats:
     
     def run(self, FILE_EXISTS) -> None:
         for line in LINES:
-            logger.info(f'Проверка статистики группы: {line}')
+            logger.info(f'Проверка статистики группы @{line}')
 
-            group_link = self.get_group_link(group=line)
             total_messages = self.check_total_messages_for_hour(group=line)
             total_users = self.check_total_users_for_hour(group=line)
             write_to_chat = self.check_write_to_chat(group=line, message=self.get_saved_message())
             
             data = {
-                'ID ГРУППЫ': [line], 
-                'ССЫЛКА ГРУППЫ': [group_link], 
+                'USERNAME ГРУППЫ': [line], 
                 'ВСЕГО СООБЩЕНИЙ ЗА ЧАС': [total_messages], 
                 'ВСЕГО ПОЛЬЗОВАТЕЛЕЙ ЗА ЧАС': [total_users], 
                 'ОТПРАВКА СООБЩЕНИЙ': ['Разрешена' if write_to_chat else 'Запрещена']
@@ -145,17 +141,15 @@ class CollectionStats:
 
             with pd.ExcelWriter(DATA_FILENAME, engine='xlsxwriter') as writer:
                 combined_df.to_excel(writer, index=False)
-                workbook  = writer.book
                 worksheet = writer.sheets['Sheet1']
 
-                format_number = workbook.add_format({'num_format': '0'})
-                worksheet.set_column('A:A', 20, format_number)
+                worksheet.set_column('A:A', 25)
                 worksheet.set_column('B:B', 30)
                 worksheet.set_column('C:C', 30)
                 worksheet.set_column('D:D', 30)
                 worksheet.set_column('E:E', 25)
 
-            logger.success(f'Статистика группы {line} успешно собрана')
+            logger.success(f'Статистика группы @{line} успешно собрана')
 
 if __name__ == "__main__":
     print('Developer - https://t.me/daniilprg\n')
